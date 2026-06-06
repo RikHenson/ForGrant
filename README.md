@@ -7,9 +7,15 @@ In Multimodal folder:
 
 # DSM simulations (Figure 4)
 
-In *** folder:
+In SSM folder:
 
-- The Matlab script
+- The Matlab script "ssm_fit.m" fits a 2-state SSM to GM thickness and fluid intelligence data in g_gm.dat
+
+- fx_model2.m and gx_model2.m specify the state and observation equations respectively
+ 
+- plot_parameters.m plots priors and posteriors (latter with 95% CI)
+
+- Other SPM12 functions needed are in the toolbox directory (see README.md there)
 
 # HMM simulations (Figure 5)
 
