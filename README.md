@@ -5,7 +5,7 @@ In Multimodal folder:
 
 - The R script "CogRes_Data.R" predicts cognition using CamCAN data on gray-matter, white-matter and fMRI connectivity, using data in "cog_res_data.csv".
 
-# DSM simulations (Figure 4)
+# SSM simulations (Figure 4)
 
 In SSM folder:
 
