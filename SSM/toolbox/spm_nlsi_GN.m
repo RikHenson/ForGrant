@@ -1,4 +1,4 @@
-function [Ep,Cp,Eh,F,L,dFdp,dFdpp] = spm_nlsi_GN(M,U,Y)
+function [Ep,Cp,Eh,Ch,F,L,dFdp,dFdpp] = spm_nlsi_GN(M,U,Y)
 % Bayesian inversion of nonlinear models - Gauss-Newton/Variational Laplace
 % FORMAT [Ep,Cp,Eh,F] = spm_nlsi_GN(M,U,Y)
 %
