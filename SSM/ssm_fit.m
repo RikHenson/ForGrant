@@ -1,4 +1,4 @@
-%% Demonstration of fitting a 2-population model to the OASIS dataset
+%% Demonstration of fitting a 2-state model to the OASIS dataset
 %
 % Rik Henson and Peter Zeidman
 
@@ -22,22 +22,7 @@ zscore_xnan = @(x) bsxfun(@rdivide, bsxfun(@minus, x, mean(x,'omitnan')), std(x,
 brain = zscore_xnan(OASIS_longitudinal_data.Cortical_Thickness);
 cognition = zscore_xnan(OASIS_longitudinal_data.Fluid_Intelligence); % already Z-scored?
 
-%% Remove one-trial practice effects?
-% not_nan = find(~isnan(cognition));
-% y = cognition(not_nan);
-% id_data = id(not_nan);
-% X = zeros(length(not_nan),nsubjects+1);
-% for i = 1:nsubjects
-%     ind = find(id_data == uids(i));
-%     X(ind,1) = [0; ones(length(ind)-1,1)];
-%     X(ind,i+1) = ones(size(ind));
-% end
-% B = pinv(X)*y;
-% y = y - X*B;
-% y = y + X(:,2:end)*B(2:end);
-% cognition(not_nan) = y;
-
-% Decide the number of evenly spaced age bins
+%% Decide the number of evenly spaced age bins
 min_age_in_years = floor(min(age));
 max_age_in_years = ceil(max(age));
 nbins = max_age_in_years - min_age_in_years + 1;
@@ -74,8 +59,6 @@ N_mean_brain = sum(~isnan(Y_brain),2);
 N_mean_cognition = sum(~isnan(Y_cognition),2);
 
 %% Visualise data
-%spm_figure('GetWin','Data');
-%spm_clf;
 figure(Position = [0 70 700 1000])
 
 % Plot data present / absence
@@ -111,23 +94,18 @@ title('Data');
 set(gca,'FontSize',12);
 %ylim([2 2.8]);
 
-%% Simulate data under priors
+%% Fit grand mean (to estimate better priors for each subject later)
 
-% Starting values for states 
+% Starting values for brain and cognitive states 
 x0 = [1 1]';
 
-% Priors
-%M.pE = [0 0 0 0 1 1]';
-M.pE = [3/2 1 1/2 3/2 0 0]'; % chosen to resemble mean data roughly
-M.pC = diag([1/16 1/16 1/16 1/16 1 1]);
-
-% Model spec
+% Define model M
 M.IS = @ode_LL;
 M.f  = @fx_model2;
 M.g  = @gx_model2;
 M.x  = x0; % starting values
 M.l  = 2;  % number of outputs
-M.m  = 1;  % number of inputs (columns of U.u) - does this need to match number of states/outputs?
+M.m  = 0;  % number of inputs 
 M.ns = nbins; % number of samples
 
 % Data structure
@@ -135,100 +113,45 @@ U = struct();
 U.u = zeros(nbins,M.m);
 U.dt = 1;
 
-% Integrate
-[y,ty,x,tx] = ode_LL(M.pE,M,U);
+% Parameters (see fx_model2.m and gx_model2.m):
+% 1 = Brain decline (alpha_1)
+% 2 = Cognitive decline (alpha_2)
+% 3 = Brain->Cognitive (beta_1)
+% 4 = Cognitive->Brain (beta_2)
+% 5 = Brain intercept (delta_1)
+% 6 = Cognitive intercept (delta_2)
 
-% Switch off brain<->cognition interactions and re-integrate
-P = M.pE;
-P(2) = -32; % brain->cognition
-P(3) = -32; % cognition->brain
-[ylinear,ty,xlinear,tx] = ode_LL(P,M,U);
-
-% Create figure
-%spm_figure('GetWin','Simulation under priors');
-figure(Position = [0 0 700 1000])
-
-% Plot states (no-interaction model)
-subplot(2,2,1);
-plot(edges,xlinear,'LineWidth',3);
-legend({'Brain','Cognition'},'Location','west');
-xlabel('Age');
-title('Latent States');
-axis square
-set(gca,'FontSize',12);
-
-% Plot predicted data (no-interaction model)
-subplot(2,2,2);
-plot(edges,ylinear,'LineWidth',3);
-legend({'Brain','Cognition'},'Location','west');
-xlabel('Age');
-title('Simulated data');
-axis square
-set(gca,'FontSize',12);
-
-% Plot states (full model)
-subplot(2,2,3);
-plot(edges,x,'LineWidth',3);
-legend({'Brain','Cognition'},'Location','west');
-xlabel('Age');
-title('Latent States');
-axis square
-set(gca,'FontSize',12);
-
-% Plot predicted data (full model)
-subplot(2,2,4);
-plot(edges,y,'LineWidth',3);
-legend({'Brain','Cognition'},'Location','west');
-xlabel('Age');
-title('Simulated data');
-axis square
-set(gca,'FontSize',12);
-
-%% Fit model to grand mean cortical brain
-
-% Less biased priors?
-M.pE = [0 0 0 0 0 0]'; % shrinkage priors
-M.pC = diag([1/16 1/16 1/16 1/16 1 1]);
+% Priors on parameters
+M.pE = [0 0 0 0 0 0]';                     % shrinkage priors
+M.pC = diag([1/16 1/16 1/16 1/16 1 1]);    % weak priors on intercepts
 %M.pE = [3/2 1 1/2 3/2 0 0]'; % chosen to resemble mean data roughly
 %M.pC = diag([1/16 1/16 1/16 1/16 64 64]);
 
-% Noise priors
-%M.hE = 6;
-%M.hC = 1/1024;
+% (Log) Priors on noise hyperparameters (related to SNR of data; could optimise with model evidence)
 M.hE = 6;
 M.hC = 1/6;
 
-% Measurement precision (nans have low prior precision)
-% Q(i,i) = N where N is the number of measurements (with a min of 1/1024)
-Q={};
-%Q = {diag(max(1/1024,N_mean_brain+N_mean_cognition))};
-%Q = spm_Ce(repmat(nbins,1,2)); % appropriate if observations concatenated
+% Measurement precision, based on number of observations per bin (with nans having min of 1/1024)
+Q = {}; % Q(i,i) = N where N is the number of measurements 
 Q{1} = diag(max(1/1024,N_mean_brain));
 Q{2} = diag(max(1/1024,N_mean_cognition));
-% e = zeros(2); e(1,1)=1;
-% Q{1} = kron(e,diag(max(1/1024,N_mean_brain)));
-% e = zeros(2); e(2,2)=1;
-% Q{2} = kron(e,diag(max(1/1024,N_mean_cognition)));
 
 % Set data
 Y = struct();
 Y.y  = [Y_mean_brain Y_mean_cognition];
 Y.y(isnan(Y.y(:,1)),1) = mean(Y.y(:,1),"omitnan");
 Y.y(isnan(Y.y(:,2)),2) = mean(Y.y(:,2),"omitnan");
-%Y.y = [Y.y(:,1); Y.y(:,2)];
 Y.dt = 1;
 Y.Q  = Q;
 
-% Invert
-%[Ep,Cp,Eh,Ch,F] = variational_laplace(M,U,Y); % does not handle >1 variable
-M.X0 = ones(size(Y.y,1),1);
-%M.X0 = kron(eye(2),ones(nbins,1));
+% Invert (estimate)
+M.X0 = ones(size(Y.y,1),1); % only confound is mean over time
 [Ep,Cp,Eh,Ch,F] = spm_nlsi_GN(M,U,Y);
 
 % Integrate under posteriors
 [yhat,ty,xhat,tx] = ode_LL(Ep,M,U);
 
-% Save in standard DCM format
+% Convert to SPM's "DCM" format for PEB and plotting
 DCM = struct();
 DCM.Ep = Ep;
 DCM.Cp = Cp;
@@ -244,75 +167,12 @@ DCM.xhat = xhat;
 DCM.tx   = tx;
 DCM.ages = edges;
 
-% Bayesian model reduction: reduced model with/without each parameter
-
-% Full priors
-pE = M.pE;
-pC = M.pC;
-
-models = [
-    1 0 0 1  1 1;  % No cross-terms
-    1 0 1 1  1 1;  % No B->C
-    1 1 0 1  1 1   % No C->B
-]
-nmodels = size(models,1)
-Pp = zeros(nmodels,1);
-for m = 1:nmodels
-    % Reduced prior mean
-    rE = pE;
-    rP = find(~models(m,:));
-    rE(rP) = -32;
-
-    % Reduced prior covariance
-    rC = pC;
-    rC(rP,rP) = 0; % point null quite unlikely?
-    %rC(rP,rP) = mean(pE)/100;
-
-    % Compare models (reduced - full free energy)
-    dF = spm_log_evidence_reduce(Ep,Cp,pE,pC,rE,rC);
-
-    % F -> P
-    P = spm_softmax([dF; 0]);
-    Pp(m) = P(2);
-%    fprintf('Model %d: Log bayes factor versus full model: %2.2f, P=%2.2f\n',...
-%        m,dF,P(2));   
-end
-Pp
-
-%Pp = 1 - spm_Ncdf(pE,abs(Ep),diag(Cp)) % different from priors
-%Pp = 1 - spm_Ncdf(0,abs(Ep),diag(Cp)) % different from 0
-Pp = 1 - spm_Ncdf(0,Ep,diag(Cp)) % greater than 0
-
-% nparams = length(pE);
-% Pp = zeros(nparams,1);
-% for parameter = 1:nparams
-%     % Reduced prior mean
-%     rE = pE;
-%     rE(parameter) = -32;
-% 
-%     % Reduced prior covariance
-%     rC = pC;
-%     rC(parameter,parameter) = 0;
-% 
-%     % Compare models (reduced - full free energy)
-%     dF = spm_log_evidence_reduce(Ep,Cp,pE,pC,rE,rC);
-% 
-%     % F -> P
-%     P = spm_softmax([dF; 0]);
-%     Pp(parameter) = P(2);
-%     fprintf('Parameter %d: Log bayes factor versus full model: %2.2f, P=%2.2f\n',...
-%         parameter,dF,P(2));   
-% end
-
-% Save
-DCM.Pp = Pp;
 DCM_avg = DCM;
 save('DCM_avg.mat','DCM_avg');
 
 %% Review model
-f1 = review_model2(DCM);
-%review_model2(DCM, age, [brain cognition]);
-%saveas(f1, 'Parameters.png', 'png')
+f1 = review_model2(DCM, age, [brain cognition]);
+%saveas(f1, 'Group_Average_Parameters.png', 'png')
 
 %% Figure for grant
 f2=figure(Position = [0 70 700 1000]);
@@ -346,12 +206,12 @@ all_y = [brain; cognition];
 ylim([min(all_y) max(all_y)])
 saveas(f2, 'Fit.png', 'png')
 
-%% PEB
+%% Now re-estimate every subject using group-average priors
 GCM = cell(nsubjects,1);
 for i = 1:nsubjects
     DCM = DCM_avg;
 
-    % Set prior for estimate
+    % Set priors from fitting grand-average
     DCM.M.pE = DCM_avg.Ep;
     DCM.M.pC = DCM_avg.Cp;
 
@@ -366,8 +226,6 @@ for i = 1:nsubjects
         p = isnan(y(:,v));
         q(p) = 1/1024;
         Q{end+1} = diag(q);
-        %e = zeros(nv); e(v,v)=1;
-        %Q{end+1} = kron(e,diag(q));
 
         % Set nans to an arbitrary value
         y(p,v) = mean(y(:,v),"omitnan");  
@@ -379,7 +237,6 @@ for i = 1:nsubjects
     DCM.M.nograph = 1;
     DCM.M.noprint = 1;
     % Invert
-    %[Ep,Cp,Eh,Ch,F] = variational_laplace(DCM.M,DCM.U,DCM.Y);    
     [Ep,Cp,Eh,Ch,F] = spm_nlsi_GN(DCM.M,DCM.U,DCM.Y);
 
     % Integrate under posteriors
@@ -400,18 +257,13 @@ for i = 1:nsubjects
 end
 fprintf('\n')
 
-
+%% Run PEB and Bayesian Model Averaging (BMA)
 % We limit to just state-space model parameters, because the 
 % parameter for the observation model has a very wide prior
 % which would need its own covariance component in the PEB model.
 inc = 1:4;
 PEB = spm_dcm_peb(GCM,[],inc);
-
-BMA = spm_dcm_peb_bmc(PEB); % shows P3 not needed
-
-%[RCM,BMR,BMA] = spm_dcm_bmr_all(PEB)
-
-%% Second level analysis
+BMA = spm_dcm_peb_bmc(PEB); % shows beta_2 not needed
 
 % Random effects average
 %Ep  = PEB.Ep;
@@ -419,7 +271,7 @@ BMA = spm_dcm_peb_bmc(PEB); % shows P3 not needed
 Ep  = BMA.Ep;
 Cp  = BMA.Cp;
 
-% Fixed effects average over subjects for P5 and P6
+% Use fixed effects average over subjects for Parameters 5 and 6
 BPA = spm_dcm_bpa(GCM,true);
 for r = setdiff([1:length(BPA.Ep)], inc)
     Ep(r) = BPA.Ep(r);
@@ -436,11 +288,7 @@ DCM.Cp = Cp;
 DCM.yhat = yhat;
 DCM.xhat = xhat;
 
-DCM.M.pE = repmat(0.01,1,6); % Just to show tiny bar on plot!
-
 f1 = review_model2(DCM);
 set(gca,'FontSize',18)
-%legend({'Prior';' ';'Posterior';' '})
-text(0.9,1.5,'Prior','color',[0 0 0],'FontSize',24)
-text(0.9,1.3,'Posterior','color',[51 153 255]./255,'FontSize',24)
+legend({'Prior';'Posterior'})
 saveas(f1, 'Parameters.png', 'png')
