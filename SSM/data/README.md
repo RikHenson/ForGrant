@@ -1,0 +1,1 @@
+These data are from the OASIS-3 dataset - please agree to terms on https://sites.wustl.edu/oasisbrains/home/oasis-3/ before using.
